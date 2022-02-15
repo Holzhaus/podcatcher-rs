@@ -1,0 +1,14 @@
+[package]
+name = "podcatcher-rs"
+version = "0.1.0"
+authors = ["Jan Holthuis <jan.holthuis@ruhr-uni-bochum.de>"]
+description = "Podcast subscriptions downloader"
+readme = "README.md"
+repository = "https://github.com/Holzhaus/podcatcher-rs"
+license = "MPL-2.0"
+keywords = ["podcast", "subscribe", "sync", "download"]
+categories = ["command-line-utilities", "multimedia::audio"]
+exclude = [".*"]
+edition = "2021"
+
+[dependencies]
