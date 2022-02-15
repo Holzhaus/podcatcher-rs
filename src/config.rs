@@ -16,6 +16,10 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     /// Directory to download files to.
     pub download_dir: PathBuf,
+    /// Maximum number of parallel downloads to use.
+    ///
+    /// Use `0` to disable any limit.
+    pub max_parallel_downloads: Option<usize>,
     /// Podcasts that should be downloaded.
     pub podcast: Vec<PodcastConfig>,
 }

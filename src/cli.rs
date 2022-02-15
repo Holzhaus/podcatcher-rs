@@ -10,6 +10,7 @@
 
 use crate::config::Config;
 use clap::{Parser, Subcommand};
+use futures::StreamExt;
 use std::path::PathBuf;
 
 /// A fictional versioning CLI
@@ -30,7 +31,8 @@ enum Commands {
 }
 
 /// Main method.
-pub fn main() {
+#[tokio::main]
+pub async fn main() {
     let args = Cli::parse();
 
     let config = if let Some(config_path) = &args.config {
@@ -46,4 +48,21 @@ pub fn main() {
             println!("Current Configuration: {:#?}", config);
         }
     }
+
+    let max_jobs = config.max_parallel_downloads.unwrap_or(5usize);
+    println!("Using {} parallel downloads.", max_jobs);
+
+    let _results: Vec<Result<rss::Channel, Box<dyn std::error::Error>>> =
+        futures::stream::iter(config.podcast.iter())
+            .map(|podcast| async move {
+                println!("Fetching {:?}", podcast.feed_url);
+
+                let content = reqwest::get(&podcast.feed_url).await?.bytes().await?;
+                let feed = rss::Channel::read_from(&content[..])?;
+                println!("{} ({}, {} items)", feed.title, feed.link, feed.items.len());
+                Ok(feed)
+            })
+            .buffer_unordered(max_jobs)
+            .collect()
+            .await;
 }
