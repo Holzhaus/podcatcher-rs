@@ -24,5 +24,5 @@
 #![cfg_attr(not(debug_assertions), deny(clippy::used_underscore_binding))]
 
 fn main() {
-    println!("Hello, world!");
+    podcatcher_rs::main()
 }
