@@ -25,5 +25,6 @@
 
 pub(in crate) mod cli;
 pub(in crate) mod config;
+pub(in crate) mod download;
 
 pub use cli::main;

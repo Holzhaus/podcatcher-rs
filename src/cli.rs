@@ -9,12 +9,14 @@
 //! Command line interface.
 
 use crate::config::Config;
+use crate::download::{download_file, fetch_sync_info, to_human_size, EpisodeDownload};
 use clap::{Parser, Subcommand};
-use futures::StreamExt;
+use futures::lock::Mutex;
+use futures::stream::StreamExt;
 use std::path::PathBuf;
 
 /// A fictional versioning CLI
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[clap(name = "podcaster")]
 #[clap(about = "Simple tool to download podcast subscriptions", long_about = None)]
 struct Cli {
@@ -24,10 +26,12 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand, PartialEq)]
 enum Commands {
     /// Show the current status.
     Status,
+    /// Fetch the latest podcasts.
+    Sync,
 }
 
 /// Main method.
@@ -42,27 +46,76 @@ pub async fn main() {
     }
     .unwrap();
 
-    match &args.command {
-        Commands::Status => {
-            // TODO
-            println!("Current Configuration: {:#?}", config);
-        }
+    if !config.download_dir.is_dir() {
+        println!(
+            "Download directory does not exist: {:?}",
+            config.download_dir
+        );
+        return;
     }
 
     let max_jobs = config.max_parallel_downloads.unwrap_or(5usize);
-    println!("Using {} parallel downloads.", max_jobs);
+    let files_to_download: Vec<EpisodeDownload> =
+        fetch_sync_info(config.download_dir, config.podcast, max_jobs).await;
 
-    let _results: Vec<Result<rss::Channel, Box<dyn std::error::Error>>> =
-        futures::stream::iter(config.podcast.iter())
-            .map(|podcast| async move {
-                println!("Fetching {:?}", podcast.feed_url);
+    println!();
+    if files_to_download.is_empty() {
+        println!("Nothing to do.");
+        return;
+    }
 
-                let content = reqwest::get(&podcast.feed_url).await?.bytes().await?;
-                let feed = rss::Channel::read_from(&content[..])?;
-                println!("{} ({}, {} items)", feed.title, feed.link, feed.items.len());
-                Ok(feed)
-            })
-            .buffer_unordered(max_jobs)
-            .collect()
-            .await;
+    let (total_size, is_partial) =
+        files_to_download
+            .iter()
+            .fold((0, false), |(total_size, is_partial), file| {
+                let size = file.file_size.unwrap_or(0);
+                (total_size + size, is_partial || size == 0)
+            });
+
+    let (human_size, human_size_suffix) = to_human_size(total_size);
+    if is_partial {
+        println!(
+            "Total Download Size: {}{} (size of some files is unknown)",
+            human_size, human_size_suffix
+        );
+    } else {
+        println!("Total Download Size: {}{}", human_size, human_size_suffix);
+    }
+    println!();
+
+    if args.command == Commands::Status {
+        println!("Files to download:");
+        for file in &files_to_download {
+            println!(
+                "  {} ({}, {})",
+                file.file_name(),
+                file.url,
+                file.human_file_size()
+            );
+        }
+        return;
+    }
+
+    println!("Fetching audio files...");
+    let progress = std::sync::Arc::new(Mutex::new(linya::Progress::new()));
+    let task_count = files_to_download.len();
+    futures::stream::iter(files_to_download.into_iter())
+        .enumerate()
+        .for_each_concurrent(max_jobs, move |(i, dl)| {
+            let prog = progress.clone();
+            async move {
+                std::fs::create_dir_all(&dl.file_path.parent().unwrap()).unwrap();
+                let mut data = std::fs::File::create(&dl.file_path).unwrap();
+                download_file(
+                    &mut data,
+                    prog.clone(),
+                    &dl.url,
+                    dl.file_size,
+                    format!("({}/{}) {}", i + 1, &task_count, dl.file_name()).as_ref(),
+                )
+                .await
+                .unwrap();
+            }
+        })
+        .await;
 }

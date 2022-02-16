@@ -41,6 +41,10 @@ impl Config {
 /// Represents the configuration for a single podcast.
 #[derive(Debug, Deserialize)]
 pub struct PodcastConfig {
+    /// Title (overrides title from the RSS feed).
+    ///
+    /// This is used as the directory name.
+    pub title: Option<String>,
     /// Podcast RSS Feed URL
     pub feed_url: String,
 }
